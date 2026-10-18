@@ -132,9 +132,9 @@ export function Modal({ title, onClose, children }) {
 export const Toggle = ({ checked, onChange, disabled, label }) => (
   <button
     role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)}
-    className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors duration-150 disabled:opacity-50', checked ? 'bg-brand' : 'bg-toggle')}
+    className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50', checked ? 'bg-brand' : 'bg-toggle')}
   >
-    <span className={cx('absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-transform duration-150', checked ? 'translate-x-[20px]' : 'translate-x-0')} />
+    <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all', checked ? 'left-[22px]' : 'left-0.5')} />
   </button>
 )
 
@@ -321,14 +321,9 @@ export function Select({ value, onChange, options, ariaLabel, placeholder = 'Sel
 export const Chip = ({ on, onClick, color, children, className }) => (
   <button
     type="button" aria-pressed={on} onClick={onClick}
-    className={cx(
-      'inline-flex select-none items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-      on ? 'border-brand bg-brand-soft text-ink ring-1 ring-brand/30' : 'border-dashed border-line text-muted hover:border-solid hover:text-ink',
-      className
-    )}
+    className={cx('inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors', on ? 'border-line bg-surface text-ink' : 'border-dashed border-line text-muted hover:text-ink', className)}
   >
-    {color ? <span className="h-2 w-2 rounded-full transition-opacity" style={{ background: color, opacity: on ? 1 : 0.3 }} />
-      : <span className={cx('grid h-3.5 w-3.5 place-items-center rounded-full border transition-colors', on ? 'border-brand bg-brand text-on-brand' : 'border-line')}>{on && <Check size={10} strokeWidth={3} aria-hidden="true" />}</span>}
+    {color && <span className="h-2 w-2 rounded-full transition-opacity" style={{ background: color, opacity: on ? 1 : 0.3 }} />}
     {children}
   </button>
 )
