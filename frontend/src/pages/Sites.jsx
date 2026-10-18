@@ -1,36 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CheckCircle2, Globe, Loader2, Plus, ScanLine } from 'lucide-react'
+import { Globe, Plus, ScanLine } from 'lucide-react'
 import { api } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
+import ScanBanner from '../components/ScanBanner'
 import { Banner, Button, Card, CardHead, Empty, ErrorState, Field, Modal, PageHeader, Pill, Select, Skeleton, Toggle, cx, inputCls, useToast } from '../components/ui'
 import { fmtDateTime, timeAgo } from '../lib/format'
 
 const INTERVALS = [[6, 'Every 6 hours'], [12, 'Every 12 hours'], [24, 'Daily'], [48, 'Every 2 days'], [168, 'Weekly']]
 const intervalLabel = (h) => INTERVALS.find(([v]) => v === h)?.[1] ?? `Every ${h}h`
-
-function ScanBanner({ id, domain, onClose }) {
-  const qc = useQueryClient()
-  const q = useQuery({ queryKey: ['scan', id], queryFn: () => api.scan(id), refetchInterval: (query) => (query.state.data?.status === 'running' ? 1000 : false) })
-  const s = q.data
-  useEffect(() => {
-    if (s && s.status !== 'running') ['sites', 'scans', 'analytics', 'incidents'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
-  }, [s?.status]) // eslint-disable-line
-  if (!s) return null
-  const pct = Math.round((s.pages_done / Math.max(1, s.pages_total)) * 100)
-  const done = s.status !== 'running'
-  return (
-    <Banner tone={done ? (s.status === 'failed' ? 'red' : 'green') : 'blue'} onClose={done ? onClose : undefined}>
-      <div className="flex items-center gap-2 font-medium">
-        {done ? <CheckCircle2 size={16} /> : <Loader2 size={16} className="animate-spin" />}
-        {done ? `Scan of ${domain} ${s.status === 'failed' ? 'failed' : 'finished'}` : `Scanning ${domain}`}
-      </div>
-      <p className="mt-1 text-xs">{s.pages_done} of {s.pages_total} pages checked, {s.changed} changed, {s.claims_extracted} claims extracted</p>
-      {!done && <div className="mt-2 h-1.5 rounded-full bg-surface/70"><div className="h-1.5 rounded-full bg-sky-500 transition-all" style={{ width: `${pct}%` }} /></div>}
-    </Banner>
-  )
-}
 
 function AddSite({ onClose }) {
   const qc = useQueryClient()
@@ -72,19 +51,7 @@ export default function Sites() {
   const selected = sites.data?.find((s) => s.id === sel) ?? sites.data?.[0]
   const history = useQuery({ queryKey: ['scans', selected?.id], queryFn: () => api.scans({ site_id: selected.id }), enabled: !!selected })
   const start = useMutation({ mutationFn: (s) => api.startScan({ site_id: s.id }), onSuccess: (sc, s) => setScan({ id: sc.id, domain: s.domain }) })
-  const toast = useToast()
-  const toggle = useMutation({
-    mutationFn: ({ id, enabled }) => api.updateSite(id, { enabled }),
-    // Flip the switch immediately; roll back if the server rejects it.
-    onMutate: async ({ id, enabled }) => {
-      await qc.cancelQueries({ queryKey: ['sites'] })
-      const prev = qc.getQueryData(['sites'])
-      qc.setQueryData(['sites'], (l) => l?.map((s) => (s.id === id ? { ...s, enabled } : s)))
-      return { prev }
-    },
-    onError: (e, _v, ctx) => { qc.setQueryData(['sites'], ctx?.prev); toast(e.message || 'Could not update the website', 'red') },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['sites'] }),
-  })
+  const toggle = useMutation({ mutationFn: ({ id, enabled }) => api.updateSite(id, { enabled }), onSuccess: () => qc.invalidateQueries({ queryKey: ['sites'] }) })
 
   return (
     <>
@@ -106,7 +73,7 @@ export default function Sites() {
                   <tbody className="divide-y divide-line">
                     {sites.data.map((s) => (
                       <tr key={s.id} onClick={() => setSel(s.id)} className={cx('cursor-pointer transition-colors hover:bg-hover', selected?.id === s.id && 'bg-brand-soft/50')}>
-                        <td className="px-5 py-3.5"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-canvas"><Globe size={16} /></span><div><p className="font-medium">{s.domain}</p><p className="text-xs text-muted">{s.jurisdiction} · {s.language.toUpperCase()}</p></div></div></td>
+                        <td className="px-5 py-3.5"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-canvas"><Globe size={16} /></span><div><Link to={`/sites/${s.id}`} onClick={(e) => e.stopPropagation()} className="font-medium hover:underline">{s.domain}</Link><p className="text-xs text-muted">{s.jurisdiction} · {s.language.toUpperCase()}</p></div></div></td>
                         <td className="px-5 py-3.5">{s.pages}</td>
                         <td className="px-5 py-3.5 text-muted">{intervalLabel(s.scan_interval_hours)}</td>
                         <td className="px-5 py-3.5">{s.last_scan_at ? <div><p>{timeAgo(s.last_scan_at)}</p>{s.last_scan_status === 'failed' && <Pill tone="red" className="mt-1">Failed</Pill>}</div> : <span className="text-muted">Never</span>}</td>

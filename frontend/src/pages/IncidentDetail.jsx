@@ -32,7 +32,7 @@ function DecisionPanel({ inc }) {
       <div className="space-y-4 px-5 pb-5">
         {d && (
           <div className="rounded-xl bg-canvas/70 p-3 text-sm">
-            <p className="font-medium">{DECISIONS[d.decision].label}</p>
+            <p className="font-medium">{DECISIONS[d.decision]?.label ?? d.decision}</p>
             <p className="mt-1 text-muted">{d.rationale}</p>
             <p className="mt-2 text-xs text-muted">{d.reviewer}, {fmtDateTime(d.at)}</p>
           </div>
@@ -81,7 +81,9 @@ export default function IncidentDetail() {
   if (q.isLoading) return <div className="space-y-4"><Skeleton className="h-16 w-2/3" /><div className="grid gap-4 md:grid-cols-2"><Skeleton className="h-72" /><Skeleton className="h-72" /></div></div>
   if (q.error) return <Card><ErrorState error={q.error} onRetry={q.refetch} /></Card>
   const inc = q.data
-  const ev = inc.evidence[ei]
+  // Clamp the selected evidence index: `ei` survives navigation between incidents,
+  // so a stale value from a multi-source incident would crash a single-source one.
+  const ev = inc.evidence[ei] ?? inc.evidence[0]
 
   return (
     <>
