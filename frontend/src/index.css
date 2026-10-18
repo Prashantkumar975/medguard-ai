@@ -70,7 +70,7 @@
 }
 
 html, body, #root { min-height: 100%; }
-html { color-scheme: light; scrollbar-gutter: stable; }
+html { color-scheme: light; }
 html.dark { color-scheme: dark; }
 body { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 
@@ -103,5 +103,9 @@ input.mg-radio:checked::before { transform: scale(1); }
 /* Popover list for the custom Select. */
 @keyframes mg-pop { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
 .mg-pop { animation: mg-pop .12s ease-out; }
+
+/* Page content: gentle fade-up when the route changes. */
+@keyframes mg-fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.mg-fade { animation: mg-fade .18s ease-out; }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

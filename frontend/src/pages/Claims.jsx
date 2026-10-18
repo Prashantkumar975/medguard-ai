@@ -7,6 +7,8 @@ import { Card, Empty, ErrorState, PageHeader, Skeleton, cx, inputCls } from '../
 import { fmtDateTime } from '../lib/format'
 
 export default function Claims() {
+  // TEMP: ?boom=1 renders the custom error page for preview — remove when done
+  if (new URLSearchParams(window.location.search).has('boom')) throw new Error('Test crash: previewing the custom error page')
   const [q, setQ] = useState('')
   const [dq, setDq] = useState('')
   useEffect(() => { const t = setTimeout(() => setDq(q), 250); return () => clearTimeout(t) }, [q])

@@ -21,6 +21,8 @@ const KPI_STYLE = {
   claims: ['bg-mint', 'text-mint-ink', BadgeCheck],
   review: ['bg-lilac', 'text-lilac-ink', Timer],
 }
+// Each KPI drills into the page where you can act on it.
+const KPI_LINKS = { open: '/queue', pages: '/sites', claims: '/claims', review: '/queue' }
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -41,28 +43,36 @@ export default function Dashboard() {
       </PageHeader>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {(a.data?.kpis ?? [null, null, null, null]).map((k, i) => (
-          <Card key={k?.key ?? i} className="p-5">
-            {k ? (() => {
-              const [bg, ink, Icon] = KPI_STYLE[k.key] ?? KPI_STYLE.open
-              return (
-                <>
-                  <div className="flex items-center gap-3">
-                    <span className={cx('grid h-9 w-9 shrink-0 place-items-center rounded-xl', bg, ink)}><Icon size={18} aria-hidden="true" /></span>
-                    <p className="text-sm text-muted">{k.label}</p>
+        {(a.data?.kpis ?? [null, null, null, null]).map((k, i) => {
+          const body = k ? (() => {
+            const [bg, ink, Icon] = KPI_STYLE[k.key] ?? KPI_STYLE.open
+            return (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className={cx('grid h-9 w-9 shrink-0 place-items-center rounded-xl', bg, ink)}><Icon size={18} aria-hidden="true" /></span>
+                  <p className="text-sm text-muted">{k.label}</p>
+                  {KPI_LINKS[k.key] && <ArrowUpRight size={15} aria-hidden="true" className="ml-auto text-muted opacity-0 transition-opacity group-hover:opacity-100" />}
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-2">
+                  <div>
+                    <p className="font-display text-[34px] font-bold leading-none">{typeof k.value === 'number' ? k.value.toLocaleString() : k.value}</p>
+                    <p className="mt-2 text-xs text-muted">{k.delta}</p>
                   </div>
-                  <div className="mt-4 flex items-end justify-between gap-2">
-                    <div>
-                      <p className="font-display text-[34px] font-bold leading-none">{typeof k.value === 'number' ? k.value.toLocaleString() : k.value}</p>
-                      <p className="mt-2 text-xs text-muted">{k.delta}</p>
-                    </div>
-                    <Spark data={k.series} className={ink} />
-                  </div>
-                </>
-              )
-            })() : <><Skeleton className="h-4 w-28" /><Skeleton className="mt-4 h-9 w-20" /></>}
-          </Card>
-        ))}
+                  <Spark data={k.series} className={ink} />
+                </div>
+              </>
+            )
+          })() : <><Skeleton className="h-4 w-28" /><Skeleton className="mt-4 h-9 w-20" /></>
+
+          if (!k) return <Card key={`kpi-skeleton-${i}`} className="p-5">{body}</Card>
+          const to = KPI_LINKS[k.key]
+          if (!to) return <Card key={k.key} className="p-5">{body}</Card>
+          return (
+            <Link key={k.key} to={to} className="group rounded-2xl border border-line bg-surface p-5 transition-all hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-sm">
+              {body}
+            </Link>
+          )
+        })}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">

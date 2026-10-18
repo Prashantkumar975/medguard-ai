@@ -131,8 +131,9 @@ export function VerdictChart({ data }) {
   const all = data ?? []
   const totalAll = all.reduce((s, v) => s + v.count, 0)
   const supported = all.find((v) => v.verdict === 'SUPPORTED')?.count ?? 0
+  // Unknown verdicts from a future API must not crash the chart — fall back gracefully.
   const rows = useMemo(
-    () => all.filter((v) => withSupported || v.verdict !== 'SUPPORTED').map((v) => ({ ...v, name: VERDICTS[v.verdict].label, short: SHORT[v.verdict], fill: c.verdict[v.verdict] })),
+    () => all.filter((v) => withSupported || v.verdict !== 'SUPPORTED').map((v) => ({ ...v, name: VERDICTS[v.verdict]?.label ?? v.verdict, short: SHORT[v.verdict] ?? v.verdict, fill: c.verdict[v.verdict] ?? '#b7bdb9' })),
     [all, withSupported, c]
   )
   const total = rows.reduce((s, r) => s + r.count, 0)

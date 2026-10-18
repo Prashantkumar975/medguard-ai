@@ -6,10 +6,17 @@ import { Empty } from './components/ui'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Sites = lazy(() => import('./pages/Sites'))
+const SiteDetail = lazy(() => import('./pages/SiteDetail'))
 const Queue = lazy(() => import('./pages/Queue'))
 const Claims = lazy(() => import('./pages/Claims'))
 const IncidentDetail = lazy(() => import('./pages/IncidentDetail'))
 const Library = lazy(() => import('./pages/Library'))
+const Reports = lazy(() => import('./pages/Reports'))
+const Status = lazy(() => import('./pages/Status'))
+const Notifications = lazy(() => import('./pages/Notifications'))
+const AuditLog = lazy(() => import('./pages/AuditLog'))
+const Help = lazy(() => import('./pages/Help'))
+const Account = lazy(() => import('./pages/Account'))
 const Admin = lazy(() => import('./pages/Admin'))
 
 export default function App() {
@@ -18,6 +25,13 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="sites" element={<Sites />} />
+        <Route path="sites/:id" element={<SiteDetail />} />
+        <Route path="status" element={<Status />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="audit" element={<AuditLog />} />
+        <Route path="help" element={<Help />} />
+        <Route path="account" element={<Account />} />
         <Route path="queue" element={<Queue />} />
         <Route path="claims" element={<Claims />} />
         <Route path="incidents/:id" element={<IncidentDetail />} />

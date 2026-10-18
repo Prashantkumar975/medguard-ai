@@ -119,6 +119,7 @@ function listIncidents(p = {}) {
     .filter((i) =>
       (!p.priority || i.priority === p.priority) &&
       (!p.verdict || i.verdict === p.verdict) &&
+      (!p.site || i.site === p.site) &&
       (!p.status || p.status === 'all' || (p.status === 'active' ? ACTIVE.includes(i.status) : i.status === p.status)) &&
       (!q || [i.title, i.claim.statement, i.site, i.id].some((t) => t.toLowerCase().includes(q)))
     )
@@ -197,6 +198,44 @@ function recheck(id) {
   return i
 }
 
+/* ---------- Org-wide audit log and in-app notifications ---------- */
+const notifRead = new Set()
+const REVIEW_LABEL = { confirm: 'Issue confirmed', needs_info: 'More information requested', dismiss: 'Dismissed as false alarm' }
+const ADMIN_AUDIT = [
+  { id: 'aud_set1', at: ago(26), actor: 'Sam Okafor', action: 'settings', object: 'Notification settings', detail: 'Alert threshold set to High priority and above' },
+  { id: 'aud_role1', at: ago(74), actor: 'Sam Okafor', action: 'role', object: 'Dr. Jonas Weber', detail: 'Role changed to Clinical reviewer' },
+  { id: 'aud_site1', at: ago(120), actor: 'Sam Okafor', action: 'site', object: 'rxcorner.example', site: 'rxcorner.example', detail: 'Monitoring paused (site disabled)' },
+  { id: 'aud_site2', at: ago(300), actor: 'Sam Okafor', action: 'site', object: 'wellness-hub.example', site: 'wellness-hub.example', detail: 'Website added to monitoring' },
+]
+const domainOf = (siteId) => sites.find((x) => x.id === siteId)?.domain ?? siteId
+
+function auditLog() {
+  const ev = []
+  for (const i of incidents) {
+    if (i.decision) ev.push({ id: `aud_${i.id}`, at: i.decision.at, actor: i.decision.reviewer, action: 'review', object: i.id, incident_id: i.id, detail: `${REVIEW_LABEL[i.decision.decision]}: ${i.decision.rationale}` })
+    if (i.status === 'resolved') ev.push({ id: `aud_${i.id}_re`, at: i.decision?.at ?? i.created_at, actor: 'Scan agent', action: 'recheck', object: i.id, incident_id: i.id, detail: 'Page rescanned — the claim no longer conflicts with the evidence' })
+  }
+  for (const s of scans) {
+    if (s.status === 'failed') ev.push({ id: `aud_${s.id}`, at: s.started_at, actor: 'Scan agent', action: 'scan', object: domainOf(s.site_id), site: domainOf(s.site_id), detail: `Scan failed — ${s.error}` })
+  }
+  return ev.concat(ADMIN_AUDIT).sort((a, b) => new Date(b.at) - new Date(a.at))
+}
+
+function notifications() {
+  const out = []
+  for (const i of incidents) {
+    if (ACTIVE.includes(i.status) && (i.priority === 'critical' || i.priority === 'high'))
+      out.push({ id: `ntf_${i.id}`, kind: 'finding', tone: i.priority, title: `New ${i.priority} finding on ${i.site}`, detail: i.title, at: i.created_at, href: `/incidents/${i.id}` })
+    if (i.status === 'resolved')
+      out.push({ id: `ntf_${i.id}_res`, kind: 'resolved', title: `Finding resolved on ${i.site}`, detail: i.title, at: i.decision?.at ?? i.created_at, href: `/incidents/${i.id}` })
+  }
+  for (const s of scans) {
+    if (s.status === 'failed')
+      out.push({ id: `ntf_${s.id}`, kind: 'scan_failed', title: `Scan failed on ${domainOf(s.site_id)}`, detail: s.error, at: s.started_at, href: `/sites/${s.site_id}` })
+  }
+  return out.sort((a, b) => new Date(b.at) - new Date(a.at)).map((n) => ({ ...n, read: notifRead.has(n.id) }))
+}
+
 export async function mockRequest(method, path, params = {}, body) {
   await sleep(200 + Math.random() * 250)
   let m
@@ -209,9 +248,10 @@ export async function mockRequest(method, path, params = {}, body) {
     sites.push(s)
     return clone(s)
   }
-  if ((m = path.match(/^\/sites\/([^/]+)$/)) && method === 'PATCH') {
+  if ((m = path.match(/^\/sites\/([^/]+)$/))) {
     const s = sites.find((x) => x.id === m[1])
-    Object.assign(s, body)
+    if (!s) throw new Error('Site not found')
+    if (method === 'PATCH') Object.assign(s, body)
     return clone(s)
   }
   if (path === '/scans') {
@@ -241,5 +281,9 @@ export async function mockRequest(method, path, params = {}, body) {
     if (method === 'PUT') settings = { ...settings, ...body }
     return clone(settings)
   }
+  if (path === '/audit') return clone(auditLog())
+  if (path === '/notifications') return clone(notifications())
+  if (path === '/notifications/read-all') { notifications().forEach((n) => notifRead.add(n.id)); return { ok: true } }
+  if ((m = path.match(/^\/notifications\/([^/]+)\/read$/))) { notifRead.add(m[1]); return { ok: true } }
   throw new Error(`Mock API has no handler for ${method} ${path}`)
 }
