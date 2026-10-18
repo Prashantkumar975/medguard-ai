@@ -21,4 +21,11 @@ export const api = {
   updateUser: (id, body) => r('PATCH', `/admin/users/${id}`, { body }),
   settings: () => r('GET', '/admin/settings'),
   saveSettings: (body) => r('PUT', '/admin/settings', { body }),
+
+  // ---- Help, reporting, audit and notifications pages ----
+  site: (id) => r('GET', `/sites/${id}`), // single-site detail (scans + findings live on the list endpoints)
+  audit: () => r('GET', '/audit'), // org-wide audit trail
+  notifications: () => r('GET', '/notifications'),
+  markNotificationRead: (id) => r('POST', `/notifications/${id}/read`),
+  markAllNotificationsRead: () => r('POST', '/notifications/read-all'),
 }
