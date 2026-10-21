@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-display: "Schibsted Grotesk", ui-sans-serif, sans-serif;
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Surfaces and text. Every one of these flips in dark mode (see .dark below). */
+  --color-canvas: #eceeec;
+  --color-surface: #ffffff;
+  --color-hover: #f5f6f4;
+  --color-track: #e9ede9;
+  --color-toggle: #cdd3cf;
+  --color-ink: #161a18;
+  --color-on-ink: #ffffff;
+  --color-muted: #69706b;
+  --color-line: #e1e4e1;
+
+  --color-brand: #0f6b5c;
+  --color-brand-dark: #0a4d42;
+  --color-brand-soft: #e0f0ea;
+  --color-on-brand: #ffffff;
+
+  /* Pastels. Each has a matching "-ink" for icons and text that sit on it. */
+  --color-blush: #f6d5e1;
+  --color-blush-ink: #9a3b5b;
+  --color-butter: #f7edbd;
+  --color-butter-ink: #86670f;
+  --color-sage: #dcebc9;
+  --color-sage-ink: #4a7729;
+  --color-sky: #d8e4f8;
+  --color-sky-ink: #38609f;
+  --color-mint: #d6ede4;
+  --color-mint-ink: #1b7765;
+  --color-lilac: #e6ddf6;
+  --color-lilac-ink: #6a4fa3;
+}
+
+.dark {
+  color-scheme: dark;
+  --color-canvas: #0f1312;
+  --color-surface: #181d1b;
+  --color-hover: #1f2523;
+  --color-track: #2a312e;
+  --color-toggle: #3a4541;
+  --color-ink: #e9eeea;
+  --color-on-ink: #101412;
+  --color-muted: #96a19b;
+  --color-line: #29302d;
+
+  --color-brand: #4cc3a6;
+  --color-brand-dark: #6fd3ba;
+  --color-brand-soft: #1b3731;
+  --color-on-brand: #07211b;
+
+  --color-blush: #4a2f3b;
+  --color-blush-ink: #f1adc5;
+  --color-butter: #453f25;
+  --color-butter-ink: #ebd47f;
+  --color-sage: #33422c;
+  --color-sage-ink: #b6d98e;
+  --color-sky: #2b3a54;
+  --color-sky-ink: #a3c0f2;
+  --color-mint: #24423a;
+  --color-mint-ink: #82d4be;
+  --color-lilac: #3a3253;
+  --color-lilac-ink: #c4b3ef;
+}
+
+html, body, #root { min-height: 100%; }
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+body { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+
+.hl-claim { background: #fbd9d3; box-shadow: 0 0 0 2px #fbd9d3; border-radius: 3px; color: inherit; }
+.hl-evidence { background: #cfeadf; box-shadow: 0 0 0 2px #cfeadf; border-radius: 3px; color: inherit; }
+.dark .hl-claim { background: #5a2b2b; box-shadow: 0 0 0 2px #5a2b2b; }
+.dark .hl-evidence { background: #1f4a3f; box-shadow: 0 0 0 2px #1f4a3f; }
+
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+
+/* Number inputs: hide the clunky native spinner, the field still accepts arrow keys. */
+input.no-spin::-webkit-outer-spin-button,
+input.no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.no-spin { -moz-appearance: textfield; appearance: textfield; }
+
+/* Radios: replace the browser default with a ring and dot that follow the theme. */
+input.mg-radio {
+  appearance: none; -webkit-appearance: none; flex: none;
+  width: 1.125rem; height: 1.125rem; border-radius: 9999px;
+  border: 1.5px solid var(--color-muted); background: var(--color-surface);
+  display: inline-grid; place-content: center; transition: border-color .15s, background-color .15s;
+}
+input.mg-radio::before {
+  content: ""; width: .5rem; height: .5rem; border-radius: 9999px;
+  background: var(--color-on-brand); transform: scale(0); transition: transform .15s;
+}
+input.mg-radio:checked { border-color: var(--color-brand); background: var(--color-brand); }
+input.mg-radio:checked::before { transform: scale(1); }
+
+/* Popover list for the custom Select. */
+@keyframes mg-pop { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+.mg-pop { animation: mg-pop .12s ease-out; }
+
+/* Page content: gentle fade-up when the route changes. */
+@keyframes mg-fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.mg-fade { animation: mg-fade .18s ease-out; }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
