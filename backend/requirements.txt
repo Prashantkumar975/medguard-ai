@@ -1,0 +1,25 @@
+# MedGuard AI backend — pinned minimums
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.6
+SQLAlchemy>=2.0.36
+alembic>=1.14
+psycopg[binary]>=3.2
+pgvector>=0.3.6
+redis>=5.2,<6  # 5.x defaults to RESP2; RESP3 (HELLO) breaks older Redis servers & kombu
+celery>=5.4
+langgraph>=0.2.60
+httpx>=0.28
+beautifulsoup4>=4.12
+trafilatura>=1.12
+PyJWT>=2.10
+bcrypt>=4.2
+reportlab>=4.2
+fastembed>=0.4
+email-validator>=2.2
+playwright>=1.49
+# tests
+pytest>=8.3
+pytest-asyncio>=0.25
+anyio>=4.7
