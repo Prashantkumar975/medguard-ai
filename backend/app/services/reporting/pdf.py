@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timezone
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -17,6 +18,10 @@ H1 = ParagraphStyle("H1x", parent=styles["Heading1"], fontSize=16, spaceAfter=6)
 H2 = ParagraphStyle("H2x", parent=styles["Heading2"], fontSize=12, spaceBefore=10, spaceAfter=4)
 BODY = ParagraphStyle("Bodyx", parent=styles["BodyText"], fontSize=9, leading=12)
 SMALL = ParagraphStyle("Smallx", parent=styles["BodyText"], fontSize=7.5, leading=9, textColor=colors.grey)
+
+
+def _safe(value, fallback: str = "—") -> str:
+    return escape(str(value)) if value is not None and str(value) else fallback
 
 
 def build_incident_pdf(db, incident: Incident) -> bytes:
@@ -35,19 +40,19 @@ def build_incident_pdf(db, incident: Incident) -> bytes:
 
     story.append(Paragraph("MedGuard AI — Incident Audit Report", H1))
     story.append(Paragraph(
-        f"Incident {incident.public_id} · Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · "
-        f"Status: {incident.status} · Priority: {incident.priority}",
+        f"Incident {_safe(incident.public_id)} · Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · "
+        f"Status: {_safe(incident.status)} · Priority: {_safe(incident.priority)}",
         SMALL,
     ))
     story.append(Spacer(1, 6))
 
     story.append(Paragraph("Finding", H2))
-    story.append(Paragraph(incident.title, BODY))
-    story.append(Paragraph(f"Verdict: <b>{incident.verdict}</b>", BODY))
+    story.append(Paragraph(_safe(incident.title), BODY))
+    story.append(Paragraph(f"Verdict: <b>{_safe(incident.verdict)}</b>", BODY))
     story.append(Spacer(1, 4))
 
     story.append(Paragraph("Monitored page", H2))
-    story.append(Paragraph(f"Site: {site_domain or '—'}<br/>URL: {snap.url if snap else '—'}", BODY))
+    story.append(Paragraph(f"Site: {_safe(site_domain)}<br/>URL: {_safe(snap.url if snap else None)}", BODY))
     if snap:
         story.append(Paragraph(
             f"Snapshot fetched: {snap.fetched_at.strftime('%Y-%m-%d %H:%M UTC') if snap.fetched_at else '—'} · "
@@ -57,15 +62,15 @@ def build_incident_pdf(db, incident: Incident) -> bytes:
 
     story.append(Paragraph("Original medical claim (model-extracted)", H2))
     if claim:
-        story.append(Paragraph(f"“{claim.statement}”", BODY))
+        story.append(Paragraph(f"“{_safe(claim.statement)}”", BODY))
         story.append(Paragraph(
-            f"Category: {claim.category or '—'} · Medication: {claim.medication or '—'} · "
-            f"Population: {claim.population or '—'} · Formulation: {claim.formulation or '—'} · "
-            f"Dosage: {claim.dosage or '—'}",
+            f"Category: {_safe(claim.category)} · Medication: {_safe(claim.medication)} · "
+            f"Population: {_safe(claim.population)} · Formulation: {_safe(claim.formulation)} · "
+            f"Dosage: {_safe(claim.dosage)}",
             BODY,
         ))
         story.append(Paragraph(
-            f"Extracted by {claim.extraction_model} (confidence {claim.extraction_confidence or 0:.2f}) · "
+            f"Extracted by {_safe(claim.extraction_model)} (confidence {claim.extraction_confidence or 0:.2f}) · "
             f"Character offsets [{claim.offsets_start}, {claim.offsets_end}]",
             SMALL,
         ))
@@ -75,19 +80,19 @@ def build_incident_pdf(db, incident: Incident) -> bytes:
         for ev in incident.evidence:
             doc_row = ev.document
             story.append(Paragraph(
-                f"<b>{doc_row.authority if doc_row else '—'}</b> — {doc_row.title if doc_row else '—'} "
-                f"(v{doc_row.version if doc_row else '?'}, effective {doc_row.effective_date if doc_row else '—'})",
+                f"<b>{_safe(doc_row.authority if doc_row else None)}</b> — {_safe(doc_row.title if doc_row else None)} "
+                f"(v{_safe(doc_row.version if doc_row else None, '?')}, effective {_safe(doc_row.effective_date if doc_row else None)})",
                 BODY,
             ))
-            story.append(Paragraph(f"Section: {ev.section or '—'}", BODY))
-            story.append(Paragraph(f"“{ev.quote}”", BODY))
-            story.append(Paragraph(f"Source: {doc_row.source_url if doc_row else '—'}", SMALL))
+            story.append(Paragraph(f"Section: {_safe(ev.section)}", BODY))
+            story.append(Paragraph(f"“{_safe(ev.quote)}”", BODY))
+            story.append(Paragraph(f"Source: {_safe(doc_row.source_url if doc_row else None)}", SMALL))
             story.append(Spacer(1, 4))
     else:
         story.append(Paragraph("No authoritative evidence was matched to this claim.", BODY))
 
     story.append(Paragraph("Verification rationale (model-generated analysis)", H2))
-    story.append(Paragraph(incident.rationale or "—", BODY))
+    story.append(Paragraph(_safe(incident.rationale), BODY))
 
     story.append(Paragraph("Risk assessment (triage aid, not a clinical judgment)", H2))
     risk_data = [
@@ -109,14 +114,14 @@ def build_incident_pdf(db, incident: Incident) -> bytes:
     story.append(Paragraph("Investigation trace", H2))
     for tr in incident.trace:
         story.append(Paragraph(
-            f"· {tr.at.strftime('%Y-%m-%d %H:%M')} — <b>{tr.step}</b>: {tr.detail}", BODY
+            f"· {tr.at.strftime('%Y-%m-%d %H:%M')} — <b>{_safe(tr.step)}</b>: {_safe(tr.detail)}", BODY
         ))
 
     story.append(Paragraph("Reviewer status", H2))
     if incident.reviews:
         r = incident.reviews[-1]
         story.append(Paragraph(
-            f"{r.decision} by {r.reviewer.name} on {r.created_at.strftime('%Y-%m-%d %H:%M UTC')}: “{r.rationale}”",
+            f"{_safe(r.decision)} by {_safe(r.reviewer.name)} on {r.created_at.strftime('%Y-%m-%d %H:%M UTC')}: “{_safe(r.rationale)}”",
             BODY,
         ))
     else:

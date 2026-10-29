@@ -20,25 +20,30 @@ from app.models import Organization, User
 def bootstrap() -> tuple[str, str]:
     db = SessionLocal()
     try:
-        org = db.scalar(select(Organization).limit(1))
+        org = db.scalar(select(Organization).where(Organization.name == settings.seed_org_name))
         if org is None:
-            org = Organization(name="MedGuard Demo Org", subscription_plan="trial")
+            org = Organization(name=settings.seed_org_name, subscription_plan="trial")
             db.add(org)
             db.commit()
             db.refresh(org)
 
-        admin = db.scalar(select(User).where(User.email == settings.seed_admin_email))
+        if len(settings.seed_admin_password) < 12:
+            raise ValueError("SEED_ADMIN_PASSWORD must be configured with at least 12 characters")
+        admin = db.scalar(select(User).where(
+            User.organization_id == org.id,
+            User.email == settings.seed_admin_email.lower().strip(),
+        ))
         if admin is None:
             admin = User(
                 organization_id=org.id,
                 name=settings.seed_admin_name,
-                email=settings.seed_admin_email,
+                email=settings.seed_admin_email.lower().strip(),
                 password_hash=hash_password(settings.seed_admin_password),
                 role="admin",
             )
             db.add(admin)
             db.commit()
-            print(f"Created admin {settings.seed_admin_email} / {settings.seed_admin_password}")
+            print(f"Created admin {settings.seed_admin_email}; password read from environment")
         return org.id, admin.id
     finally:
         db.close()

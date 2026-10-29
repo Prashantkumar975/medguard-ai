@@ -9,6 +9,26 @@ from app.workers.celery_app import celery_app
 log = logging.getLogger(__name__)
 
 
+def _same_claim(old_claim, new_claim) -> bool:
+    """Require matching drug context and meaningful text overlap before recheck."""
+    import re
+
+    if old_claim is None:
+        return False
+    if old_claim.medication and (new_claim.medication or "").casefold() != old_claim.medication.casefold():
+        return False
+    if old_claim.category and new_claim.category and old_claim.category != new_claim.category:
+        return False
+    old_terms = set(re.findall(r"[a-z0-9]+", old_claim.statement.casefold()))
+    new_terms = set(re.findall(r"[a-z0-9]+", new_claim.claim_text.casefold()))
+    ignored = {"the", "and", "for", "with", "that", "this", "from", "can", "may", "not", "should", "is", "are"}
+    old_terms -= ignored
+    new_terms -= ignored
+    if not old_terms or not new_terms:
+        return False
+    return len(old_terms & new_terms) / len(old_terms | new_terms) >= 0.3
+
+
 @celery_app.task(
     bind=True,
     name="medguard.run_scan",
@@ -58,10 +78,10 @@ def run_recheck_task(incident_id: str, reviewer_id: str) -> dict:
         snap = db.get(Snapshot, inc.snapshot_id) if inc.snapshot_id else None
         site = db.get(Site, inc.site_id)
         if snap is None or site is None:
-            inc.status = "resolved"
-            db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail="Original snapshot unavailable; incident closed"))
+            inc.status = "awaiting_correction"
+            db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail="Recheck could not run because the original snapshot or site is unavailable; incident remains open for review"))
             db.commit()
-            return {"status": "resolved", "note": "no snapshot"}
+            return {"status": "awaiting_correction", "note": "recheck unavailable"}
 
         scan = Scan(
             organization_id=inc.organization_id,
@@ -87,40 +107,60 @@ def run_recheck_task(incident_id: str, reviewer_id: str) -> dict:
         page = next((p for p in result.pages if p.url == snap.url), None)
 
         if page is None:
-            inc.status = "resolved"
-            db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail="Page could not be rescanned; marked resolved with history retained"))
+            inc.status = "awaiting_correction"
+            db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail="Page could not be rescanned; no resolution was inferred"))
             scan.status = "failed"
             scan.error = "; ".join(result.errors)[:500]
+            scan.finished_at = datetime.now(timezone.utc)
+            scan.duration_s = max(0, int((scan.finished_at - scan.started_at).total_seconds())) if scan.started_at else 0
+            site.last_scan_status = "failed"
             db.commit()
-            return {"status": "failed"}
+            return {"status": "awaiting_correction", "error": "page could not be rescanned"}
 
-        claims, _failures = extract_claims(page.text, page.url)
+        claims, failures = extract_claims(page.text, page.url)
+        extraction_failures = [f for f in failures if f.reason in {"model_unavailable", "invalid_output"}]
+        if extraction_failures or not claims:
+            inc.status = "awaiting_correction"
+            db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail="Claim extraction did not produce a verifiable result; incident remains open"))
+            scan.status = "failed"
+            scan.error = "; ".join(f.detail for f in extraction_failures)[:500] or "No claim could be extracted for recheck"
+            scan.finished_at = datetime.now(timezone.utc)
+            scan.duration_s = max(0, int((scan.finished_at - scan.started_at).total_seconds())) if scan.started_at else 0
+            site.last_scan_status = "failed"
+            db.commit()
+            return {"status": "awaiting_correction", "error": "claim extraction could not be verified"}
+
         old = inc.claim
-        still_conflicting = False
+        matching_outcome = None
         for c in claims:
-            if old and old.medication and c.medication and c.medication.lower() == old.medication.lower():
-                outcome = verify_mod.verify(c, [], [])
-                # retrieve evidence again
-                hits = hybrid_search(db, inc.organization_id, c.claim_text, jurisdiction=site.jurisdiction)
-                ev_texts = [h.text for h in hits]
-                outcome = verify_mod.verify(c, ev_texts, [None] * len(ev_texts))
-                if outcome.verdict == "POTENTIAL_CONTRADICTION":
-                    still_conflicting = True
-                break
+            if not old or not _same_claim(old, c):
+                continue
+            hits = hybrid_search(db, inc.organization_id, c.claim_text, jurisdiction=site.jurisdiction)
+            ev_texts = [h.text for h in hits]
+            matching_outcome = verify_mod.verify(c, ev_texts, [None] * len(ev_texts))
+            break
 
         inc.attempt_no += 1
-        if still_conflicting:
+        if matching_outcome is None:
+            inc.status = "awaiting_correction"
+            db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail=f"Attempt {inc.attempt_no}: the original claim could not be matched confidently; incident remains open"))
+            scan.status = "failed"
+            scan.error = "Could not match the extracted claim to the incident under review"
+        elif matching_outcome.verdict == "POTENTIAL_CONTRADICTION":
             inc.status = "open"
             db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail=f"Attempt {inc.attempt_no}: claim still conflicts after rescan; reopened"))
-        else:
+        elif matching_outcome.verdict == "SUPPORTED":
             inc.status = "resolved"
             db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail=f"Attempt {inc.attempt_no}: page rescanned; claim no longer conflicts with the evidence"))
+        else:
+            inc.status = "awaiting_correction"
+            db.add(IncidentTrace(incident_id=inc.id, step="Rescan", detail=f"Attempt {inc.attempt_no}: recheck was inconclusive ({matching_outcome.verdict}); incident remains open"))
 
         from app.models import Notification
 
         # A reopened incident is NOT a resolution — only notify when the rescan
         # actually cleared the conflict.
-        if not still_conflicting:
+        if inc.status == "resolved":
             db.add(Notification(
                 organization_id=inc.organization_id,
                 kind="resolved",
@@ -128,7 +168,11 @@ def run_recheck_task(incident_id: str, reviewer_id: str) -> dict:
                 detail=inc.title,
                 href=f"/incidents/{inc.public_id}",
             ))
-        scan.status = "completed"
+        if scan.status != "failed":
+            scan.status = "completed"
+        scan.finished_at = datetime.now(timezone.utc)
+        scan.duration_s = max(0, int((scan.finished_at - scan.started_at).total_seconds())) if scan.started_at else 0
+        site.last_scan_status = scan.status
         db.commit()
         return {"status": inc.status, "attempt": inc.attempt_no}
     finally:
@@ -219,20 +263,23 @@ def reap_stuck_task() -> dict:
 def scheduled_scans_task() -> dict:
     """Enqueue scans for enabled sites whose interval has elapsed (Celery Beat)."""
     from app.core.database import SessionLocal
-    from app.models import Site
+    from app.models import Scan, Site, new_id
     from sqlalchemy import select
 
     db = SessionLocal()
     try:
-        sites = db.scalars(select(Site).where(Site.enabled.is_(True))).all()
+        sites = db.scalars(select(Site).where(Site.enabled.is_(True)).with_for_update(skip_locked=True)).all()
         now = datetime.now(timezone.utc)
         enqueued = 0
         for site in sites:
+            active = db.scalar(
+                select(Scan.id).where(Scan.site_id == site.id, Scan.status.in_(("queued", "running"))).limit(1)
+            )
+            if active:
+                continue
             due = site.last_scan_at is None or site.last_scan_at + timedelta(hours=site.scan_interval_hours) <= now
             if not due:
                 continue
-            from app.models import Scan, new_id
-
             scan = Scan(
                 id=new_id(),
                 organization_id=site.organization_id,
@@ -242,9 +289,67 @@ def scheduled_scans_task() -> dict:
                 max_pages=25,
             )
             db.add(scan)
+            # Set this at enqueue time so simultaneous beat workers cannot
+            # schedule another run before the crawler starts.
+            site.last_scan_at = now
             db.commit()
-            run_scan_task.delay(scan.id)
+            try:
+                run_scan_task.delay(scan.id)
+            except Exception as exc:
+                scan.status = "failed"
+                scan.finished_at = now
+                scan.error = f"Could not queue scheduled scan: {exc.__class__.__name__}"
+                site.last_scan_status = "failed"
+                db.commit()
+                continue
             enqueued += 1
         return {"enqueued": enqueued}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="medguard.snapshot_retention")
+def snapshot_retention_task() -> dict:
+    """Remove expired, unreferenced page snapshots and expired refresh tokens.
+
+    Current page versions and snapshots used by claims/findings are preserved.
+    Reviewer decisions and audit logs are intentionally retained indefinitely.
+    """
+    from sqlalchemy import delete, exists, select
+
+    from app.core.database import SessionLocal
+    from app.models import Claim, Organization, OrgSetting, Page, RefreshToken, Site, Snapshot
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        profiles = dict(db.execute(
+            select(Organization.id, OrgSetting.organization_profile)
+            .outerjoin(OrgSetting, OrgSetting.organization_id == Organization.id)
+        ).all())
+        deleted_snapshots = 0
+        for org_id, profile in profiles.items():
+            days = max(30, min(3650, int((profile or {}).get("retention_days", 365))))
+            cutoff = now - timedelta(days=days)
+            current_snapshot = exists(select(Page.id).where(Page.last_snapshot_id == Snapshot.id))
+            claimed_snapshot = exists(select(Claim.id).where(Claim.snapshot_id == Snapshot.id))
+            result = db.execute(
+                delete(Snapshot)
+                .where(
+                    Snapshot.site_id.in_(select(Site.id).where(Site.organization_id == org_id)),
+                    Snapshot.fetched_at < cutoff,
+                    ~current_snapshot,
+                    ~claimed_snapshot,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            deleted_snapshots += result.rowcount or 0
+        expired_tokens = db.execute(
+            delete(RefreshToken)
+            .where(RefreshToken.expires_at < now)
+            .execution_options(synchronize_session=False)
+        ).rowcount or 0
+        db.commit()
+        return {"deleted_snapshots": deleted_snapshots, "deleted_expired_refresh_tokens": expired_tokens}
     finally:
         db.close()

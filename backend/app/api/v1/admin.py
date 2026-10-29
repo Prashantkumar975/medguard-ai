@@ -2,23 +2,20 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin
 from app.core.database import get_db
+from app.core.security import hash_password
 from app.models import AuditLog, Organization, OrgSetting, User
-from app.schemas import AuditEventOut, SettingsOut, UserOut, UserPatch
+from app.schemas import AuditEventOut, SettingsOut, UserCreate, UserOut, UserPatch
 
 router = APIRouter()
 router_audit = APIRouter()
 
 DEFAULT_NOTIFICATIONS = {
-    "email_enabled": True,
-    "recipients": "",
-    "webhook_url": "",
     "min_priority": "high",
-    "daily_digest": True,
 }
 DEFAULT_ORG_PROFILE = {
     "name": "",
@@ -47,6 +44,39 @@ def list_users(db: Session = Depends(get_db), admin: User = Depends(require_admi
     ]
 
 
+@router.post("/users", response_model=UserOut, status_code=201)
+def create_user(
+    body: UserCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    email = body.email.lower().strip()
+    existing = db.scalar(select(User.id).where(
+        User.organization_id == admin.organization_id,
+        User.email == email,
+    ))
+    if existing:
+        raise HTTPException(status_code=409, detail="A user with this email already exists in the organization")
+    user = User(
+        organization_id=admin.organization_id,
+        name=body.name.strip(),
+        email=email,
+        password_hash=hash_password(body.password),
+        role=body.role,
+    )
+    db.add(user)
+    db.add(AuditLog(
+        organization_id=admin.organization_id,
+        actor=admin.name,
+        action="user_created",
+        object=email,
+        detail=f"Created {body.role} account",
+    ))
+    db.commit()
+    db.refresh(user)
+    return UserOut(id=user.id, name=user.name, email=user.email, role=user.role, last_active=user.last_active)
+
+
 @router.patch("/users/{user_id}", response_model=UserOut)
 def patch_user(
     user_id: str,
@@ -57,6 +87,16 @@ def patch_user(
     target = db.scalar(select(User).where(User.id == user_id, User.organization_id == admin.organization_id))
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
+    if target.id == admin.id and body.role != "admin":
+        raise HTTPException(status_code=409, detail="You cannot remove your own administrator role")
+    if target.role == "admin" and body.role != "admin" and target.is_active:
+        active_admins = db.scalar(select(func.count()).select_from(User).where(
+            User.organization_id == admin.organization_id,
+            User.role == "admin",
+            User.is_active.is_(True),
+        )) or 0
+        if active_admins <= 1:
+            raise HTTPException(status_code=409, detail="The organization must retain at least one active administrator")
     target.role = body.role
     db.add(
         AuditLog(

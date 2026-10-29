@@ -26,15 +26,12 @@ class SSRFError(ValueError):
 
 
 def _is_public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return not (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-        or (ip.version == 6 and ip.ipv4_mapped is not None and not _is_public(ip.ipv4_mapped))
-    )
+    # `is_private` alone does not reject shared address space (100.64/10) and
+    # behavior for special-use ranges can vary between Python releases. Only
+    # globally routable addresses are safe crawler destinations.
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        return _is_public(ip.ipv4_mapped)
+    return ip.is_global and not (ip.is_multicast or ip.is_unspecified)
 
 
 def resolve_ips(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
@@ -70,37 +67,57 @@ def validate_url(url: str) -> tuple[str, list[str]]:
         raise SSRFError(f"Port {port} is not allowed")
 
     ips = resolve_ips(host)
-    local_ok = settings.allow_local_targets
-    allowed: list[str] = []
-    for ip in ips:
-        if _is_public(ip):
-            allowed.append(str(ip))
-        elif local_ok and (ip.is_loopback or ip.is_private):
-            allowed.append(str(ip))
-    if not allowed:
+    local_ok = settings.allow_local_targets and all(ip.is_loopback for ip in ips)
+    if not all(_is_public(ip) for ip in ips) and not local_ok:
         raise SSRFError(f"Target {host!r} resolves to a blocked address range")
-    return url, allowed
+    return url, [str(ip) for ip in ips]
 
 
 class PinnedTransport(httpx.HTTPTransport):
-    """HTTP transport that connects to a pre-validated IP but keeps the original
-    hostname for TLS SNI and the Host header (DNS-rebinding resistance)."""
+    """Resolve and validate each request, then connect to that exact IP.
 
-    def __init__(self, pinned_ip: str, scheme: str):
-        super().__init__(retries=0)
-        self.pinned_ip = pinned_ip
-        self.scheme = scheme
+    The URL is rewritten only for the socket connection. Host and TLS SNI remain
+    the original hostname, so DNS cannot change between validation and connect.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, retries=0, **kwargs)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        request.extensions.setdefault("sni_hostname", request.url.host)
-        return super().handle_request(request)
+        original = request.url
+        _, ips = validate_url(str(original))
+        host_header = original.host
+        default_port = 443 if original.scheme == "https" else 80
+        if original.port and original.port != default_port:
+            host_header = f"{host_header}:{original.port}"
+        errors: list[Exception] = []
+        for address in ips:
+            connect_host = f"[{address}]" if ":" in address else address
+            pinned_url = original.copy_with(host=connect_host)
+            headers = request.headers.copy()
+            headers["Host"] = host_header
+            extensions = dict(request.extensions)
+            extensions["sni_hostname"] = original.host.encode("ascii")
+            pinned_request = httpx.Request(
+                request.method,
+                pinned_url,
+                headers=headers,
+                content=request.content,
+                extensions=extensions,
+            )
+            try:
+                return super().handle_request(pinned_request)
+            except httpx.HTTPError as exc:
+                errors.append(exc)
+        if errors:
+            raise errors[-1]
+        raise SSRFError("No validated address available for connection")
 
 
-def build_client(allowed_ips: list[str], timeout: float | None = None) -> httpx.Client:
+def build_client(allowed_ips: list[str] | None = None, timeout: float | None = None) -> httpx.Client:
     """Client that pins connections to validated IPs."""
-    # httpx cannot pin per-request easily across hosts, so we validate before
-    # every request instead and additionally re-check redirect targets.
     return httpx.Client(
+        transport=PinnedTransport(),
         timeout=timeout or settings.fetch_timeout_s,
         follow_redirects=False,
         headers={"User-Agent": settings.crawl_user_agent},
@@ -112,9 +129,6 @@ def fetch_url(client: httpx.Client, url: str) -> httpx.Response:
     """Fetch a URL with SSRF validation on the initial target and every redirect hop."""
     current = url
     for _hop in range(settings.fetch_max_redirects + 1):
-        _, ips = validate_url(current)
-        # Rebuild request to the validated host; pin via Host header trick is not
-        # needed because validation re-resolves immediately before connecting.
         req = client.build_request("GET", current)
         response = client.send(req, stream=True)
         if response.status_code in (301, 302, 303, 307, 308):

@@ -1,6 +1,7 @@
 """Application configuration (environment-driven, no secrets in code)."""
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,16 +12,15 @@ class Settings(BaseSettings):
     app_name: str = "MedGuard AI"
     environment: str = "development"
     api_v1_prefix: str = "/api/v1"
-    # NOTE: keep >= 32 bytes for HS256 (RFC 7518). The default is for local dev
-    # only — override via SECRET_KEY in .env for anything shared or deployed.
-    secret_key: str = "dev-only-change-me-set-a-longer-secret-key-please-32b"
+    # Must be explicitly configured; startup validation rejects the placeholder.
+    secret_key: str = ""
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 14
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     # --- datastores ---
-    database_url: str = "postgresql+psycopg://postgres@127.0.0.1:5433/medguard"
-    test_database_url: str = "postgresql+psycopg://postgres@127.0.0.1:5433/medguard_test"
+    database_url: str = "postgresql+psycopg://medguard:medguard@127.0.0.1:5432/medguard"
+    test_database_url: str = "postgresql+psycopg://medguard:medguard@127.0.0.1:5432/medguard_test"
     redis_url: str = "redis://127.0.0.1:6379/0"
 
     # --- auth ---
@@ -29,12 +29,11 @@ class Settings(BaseSettings):
     login_rate_limit_window_s: int = 60
 
     # --- crawling ---
-    crawl_user_agent: str = (
-        "MedGuardAI/0.1 (+https://github.com/Prashantkumar975/medguard-ai; healthcare content monitoring)"
-    )
+    crawl_user_agent: str = "MedGuardAI/0.1"
     crawl_max_pages_per_scan: int = 25
     crawl_concurrency: int = 4
     crawl_delay_ms: int = 250
+    robots_cache_ttl_s: int = 3600
     fetch_timeout_s: float = 20.0
     fetch_max_bytes: int = 5_000_000
     fetch_max_redirects: int = 5
@@ -45,8 +44,11 @@ class Settings(BaseSettings):
     js_render_timeout_s: float = 30.0
     snapshot_dir: str = "data/snapshots"
 
-    # --- LLM (Ollama for local dev; any OpenAI-compatible server via URL for vLLM) ---
-    llm_provider: str = "ollama"
+    # --- LLM (Nebius Token Factory by default; Ollama remains available locally) ---
+    llm_provider: str = "nebius"
+    llm_base_url: str = "https://api.tokenfactory.us-central1.nebius.com/v1/"
+    llm_api_key: str = ""
+    llm_model: str = "nvidia/nemotron-3-super-120b-a12b"
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:1.5b"
     llm_timeout_s: float = 180.0
@@ -55,9 +57,11 @@ class Settings(BaseSettings):
     # --- embeddings / retrieval ---
     embedding_provider: str = "fastembed"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    embedding_dim: int = 384
+    # Database migrations fix the vector column at 384 dimensions. Change this
+    # only together with a new migration and a full embedding rebuild.
     retrieval_top_k: int = 5
     retrieval_pool_k: int = 20
+    retrieval_min_similarity: float = 0.35
 
     # --- workers ---
     task_always_eager: bool = False  # tests / no-worker dev mode
@@ -68,8 +72,19 @@ class Settings(BaseSettings):
 
     # --- demo bootstrap ---
     seed_admin_email: str = "admin@medguard.local"
-    seed_admin_password: str = "ChangeMe123!"
+    seed_admin_password: str = ""
     seed_admin_name: str = "MedGuard Admin"
+    seed_org_name: str = "MedGuard Demo Org"
+
+    @model_validator(mode="after")
+    def validate_security_configuration(self):
+        if self.environment == "test" and not self.secret_key:
+            self.secret_key = "test-only-secret-key-not-for-deployment-00000000"
+        elif len(self.secret_key.encode("utf-8")) < 32:
+            raise ValueError("SECRET_KEY must be set to at least 32 bytes")
+        if self.llm_provider.lower() not in {"nebius", "openai_compatible", "ollama"}:
+            raise ValueError("LLM_PROVIDER must be nebius, openai_compatible, or ollama")
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

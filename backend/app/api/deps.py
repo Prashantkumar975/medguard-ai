@@ -57,26 +57,17 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 
 
 async def login_rate_limit(request: Request) -> None:
-    """Per-email+IP fixed-window limiter backed by Redis (fail-open if Redis is down).
+    """Per-IP fixed-window limiter backed by Redis.
 
-    The email is carried in the JSON body (Starlette caches it on the request, so
-    reading it here does not consume it for the endpoint); the query string is
-    only a fallback. Controlled by settings.login_rate_limit_enabled so the test
-    suite (which authenticates many times) can disable it; on by default.
+    Limiting by IP prevents attempts from bypassing the throttle by rotating
+    email addresses. The test suite can disable this guard explicitly.
     """
     from app.core.config import settings
     if not settings.login_rate_limit_enabled:
         return
     import redis as redis_lib
 
-    email = (request.query_params.get("email") or "").lower()
-    if not email:
-        try:
-            payload = await request.json()
-            email = str(payload.get("email") or "").lower()
-        except Exception:  # empty/non-JSON body — fall back to the IP-only key
-            email = ""
-    key = f"login:rl:{request.client.host if request.client else 'unknown'}:{email}"
+    key = f"login:rl:{request.client.host if request.client else 'unknown'}"
     try:
         r = redis_lib.Redis.from_url(settings.redis_url, socket_timeout=1)
         n = r.incr(key)

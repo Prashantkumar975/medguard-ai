@@ -86,6 +86,7 @@ Legend for "Backend": the implementation module this maps to.
 
 | Method + path | Purpose | Permission |
 | --- | --- | --- |
+| `POST /auth/register` | create a new workspace and its first administrator; return tokens | public |
 | `POST /auth/login` | issue access + refresh token | public |
 | `POST /auth/refresh` | rotate refresh token | refresh token |
 | `POST /auth/logout` | revoke refresh token | authenticated |
@@ -127,7 +128,7 @@ in route params and equality checks, so any stable string is compatible.
   "verdict": "SUPPORTED|POTENTIAL_CONTRADICTION|POSSIBLY_OUTDATED|INCOMPLETE_INFORMATION|INSUFFICIENT_EVIDENCE",
   "status": "open|in_review|awaiting_correction|resolved|dismissed",
   "site": "testhealth.example", "page_url": "https://...",
-  "claim_statement": "string", "evidence_authority": "FDA", "evidence_date": "YYYY-MM-DD",
+  "claim_statement": "string", "evidence_authority": "source name", "evidence_date": "YYYY-MM-DD",
   "created_at": "ISO-8601"
 }
 ```
@@ -146,8 +147,8 @@ in route params and equality checks, so any stable string is compatible.
   },
   "evidence": [
     {
-      "id": "evd_1048", "document_id": "ref_zorv", "authority": "FDA",
-      "doc_type": "Drug Safety Communication", "title": "string", "version": "v2",
+      "id": "evd_1048", "document_id": "ref_zorv", "authority": "source name",
+      "doc_type": "document type", "title": "string", "version": "v2",
       "effective_date": "2026-08-21", "url": "https://...", "section": "Contraindications",
       "quote": "string", "offsets": [10, 42]
     }
@@ -167,9 +168,9 @@ respectively. The backend must validate these against the stored source text.
 ### 4.6 `ReferenceDoc`
 ```json
 {
-  "id": "ref_zorv", "authority": "FDA", "doc_type": "Drug Safety Communication",
+  "id": "ref_zorv", "authority": "source name", "doc_type": "document type",
   "title": "string", "version": "v2", "effective_date": "2026-08-21",
-  "url": "https://...", "identifiers": { "Application": "NDA 999001" },
+  "url": "https://...", "identifiers": { "Document ID": "source identifier" },
   "chunks": [ { "section": "Summary", "text": "string" } ]
 }
 ```
@@ -183,8 +184,7 @@ No `password_hash` or `organization_id` may be exposed.
 ### 4.8 `Settings`
 ```json
 {
-  "notifications": { "email_enabled": true, "recipients": "string", "webhook_url": "string",
-                     "min_priority": "critical|high|medium|low", "daily_digest": true },
+  "notifications": { "min_priority": "critical|high|medium|low" },
   "organization": { "name": "string", "default_scan_interval_hours": 24,
                     "jurisdictions": ["US"], "retention_days": 365 }
 }

@@ -120,23 +120,50 @@ def _extract_json(raw: str) -> dict:
 
 
 def call_llm(prompt: str, *, json_mode: bool = True) -> str:
-    """Call the configured open model through Ollama's API. Raises on failure."""
+    """Call Nebius Token Factory (OpenAI-compatible) or explicitly selected Ollama."""
+    if settings.llm_provider.lower() == "ollama":
+        payload = {
+            "model": settings.ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.0, "num_ctx": 8192},
+        }
+        if json_mode:
+            payload["format"] = "json"
+        resp = httpx.post(
+            f"{settings.ollama_base_url.rstrip('/')}/api/generate",
+            json=payload,
+            timeout=settings.llm_timeout_s,
+        )
+        resp.raise_for_status()
+        return resp.json().get("response", "")
+
+    if settings.llm_provider.lower() not in {"nebius", "openai_compatible"}:
+        raise ValueError(f"Unsupported LLM_PROVIDER: {settings.llm_provider}")
+    if not settings.llm_api_key:
+        raise RuntimeError("LLM_API_KEY is required when using Nebius Token Factory")
     payload = {
-        "model": settings.ollama_model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": 0.0, "num_ctx": 8192},
+        "model": settings.llm_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
     }
     if json_mode:
-        payload["format"] = "json"
+        payload["response_format"] = {"type": "json_object"}
     resp = httpx.post(
-        f"{settings.ollama_base_url}/api/generate",
+        f"{settings.llm_base_url.rstrip('/')}/chat/completions",
         json=payload,
+        headers={"Authorization": f"Bearer {settings.llm_api_key}"},
         timeout=settings.llm_timeout_s,
     )
     resp.raise_for_status()
     data = resp.json()
-    return data.get("response", "")
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError("LLM response did not contain a chat completion") from exc
+    if isinstance(content, list):
+        return "".join(part.get("text", "") for part in content if isinstance(part, dict))
+    return str(content or "")
 
 
 def extract_claims(text: str, url: str) -> tuple[list[ExtractedClaim], list[ExtractionFailure]]:
