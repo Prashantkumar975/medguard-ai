@@ -15,7 +15,7 @@ export default function Library() {
 
   return (
     <>
-      <PageHeader title="Medical library" subtitle="Official FDA documents that MedGuard checks website claims against." />
+      <PageHeader title="Medical library" subtitle="Reference documents used to compare monitored claims. Check each source and its label before relying on it." />
       <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
         <Card className="self-start">
           <div className="border-b border-line p-4">
@@ -42,14 +42,15 @@ export default function Library() {
           {!doc ? <Empty title="Select a document" hint="Its sections and version details appear here." /> : (
             <>
               <div className="border-b border-line p-5">
-                <div className="mb-2 flex flex-wrap gap-2"><Pill tone="green">{doc.authority}</Pill><Pill tone="slate">{doc.doc_type}</Pill></div>
+                <div className="mb-2 flex flex-wrap gap-2"><Pill tone={doc.is_fictional ? 'amber' : 'green'}>{doc.is_fictional ? 'Fictional demo data' : doc.authority}</Pill><Pill tone="slate">{doc.doc_type}</Pill></div>
+                {doc.is_fictional && <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">This reference is invented for demonstration and testing. It is not FDA guidance and must not be used for medical decisions.</p>}
                 <h2 className="font-display text-xl font-bold leading-snug">{doc.title}</h2>
                 <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                   <div><dt className="text-xs text-muted">Version</dt><dd>{doc.version}</dd></div>
                   <div><dt className="text-xs text-muted">Effective</dt><dd>{fmtDate(doc.effective_date)}</dd></div>
                   {Object.entries(doc.identifiers).map(([k, v]) => <div key={k}><dt className="text-xs text-muted">{k}</dt><dd>{v}</dd></div>)}
                 </dl>
-                <a href={doc.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline">Open on FDA.gov<ExternalLink size={13} /></a>
+                <a href={doc.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline">Open source page<ExternalLink size={13} /></a>
               </div>
               <div className="divide-y divide-line">
                 {doc.chunks.map((c, i) => <section key={i} className="p-5"><h3 className="mb-1.5 text-sm font-semibold">{c.section}</h3><p className="max-w-prose text-sm leading-relaxed text-ink/85">{c.text}</p></section>)}

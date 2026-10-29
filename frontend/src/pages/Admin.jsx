@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Lock } from 'lucide-react'
 import { api } from '../api/endpoints'
 import { useAuth, ROLES } from '../auth/AuthContext'
-import { Banner, Button, Card, CardHead, Empty, ErrorState, Field, PageHeader, Select, Skeleton, Toggle, cx, inputCls, useToast } from '../components/ui'
-import { PRIORITIES } from '../lib/constants'
+import { Banner, Button, Card, CardHead, Empty, ErrorState, Field, PageHeader, Select, Skeleton, cx, inputCls, useToast } from '../components/ui'
 import { timeAgo } from '../lib/format'
 
 function Users() {
@@ -46,17 +44,13 @@ function SettingsForm({ section }) {
     <form onSubmit={(e) => { e.preventDefault(); m.mutate() }} className="max-w-xl space-y-5 p-5">
       {section === 'notifications' ? (
         <>
-          <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">Email alerts</p><p className="text-xs text-muted">Send an email when a new finding is raised.</p></div><Toggle label="Email alerts" checked={f.email_enabled} onChange={(v) => set('email_enabled', v)} /></div>
-          <Field label="Recipients" hint="Separate addresses with commas."><input className={inputCls} value={f.recipients} onChange={(e) => set('recipients', e.target.value)} /></Field>
-          <Field label="Alert me for" hint="Findings below this priority stay in the queue without an email."><Select ariaLabel="Alert me for" value={f.min_priority} onChange={(v) => set('min_priority', v)} options={Object.entries(PRIORITIES).map(([k, v]) => ({ value: k, label: `${v.label} and above` }))} /></Field>
-          <Field label="Webhook URL" hint="Optional. Findings are posted here as JSON."><input className={inputCls} placeholder="https://" value={f.webhook_url} onChange={(e) => set('webhook_url', e.target.value)} /></Field>
-          <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">Daily digest</p><p className="text-xs text-muted">One summary email each morning.</p></div><Toggle label="Daily digest" checked={f.daily_digest} onChange={(v) => set('daily_digest', v)} /></div>
+          <Field label="Minimum priority for in-app notifications" hint="Lower priority findings remain in the incident queue but do not create a notification."><Select ariaLabel="Minimum priority for in-app notifications" value={f.min_priority} onChange={(v) => set('min_priority', v)} options={Object.entries({ critical: { label: 'Critical' }, high: { label: 'High' }, medium: { label: 'Medium' }, low: { label: 'Low' } }).map(([k, v]) => ({ value: k, label: `${v.label} and above` }))} /></Field>
         </>
       ) : (
         <>
           <Field label="Organization name"><input className={inputCls} value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
           <Field label="Default scan frequency"><Select ariaLabel="Default scan frequency" value={f.default_scan_interval_hours} onChange={(v) => set('default_scan_interval_hours', v)} options={[[6, 'Every 6 hours'], [12, 'Every 12 hours'], [24, 'Daily'], [168, 'Weekly']].map(([v, l]) => ({ value: v, label: l }))} /></Field>
-          <Field label="Keep audit records for" hint="In days."><input type="number" min="30" className={cx(inputCls, 'no-spin')} value={f.retention_days} onChange={(e) => set('retention_days', Number(e.target.value))} /></Field>
+          <Field label="Keep unreferenced page snapshots for" hint="In days. Findings, current page versions, and the audit trail are retained."><input type="number" min="30" max="3650" className={cx(inputCls, 'no-spin')} value={f.retention_days} onChange={(e) => set('retention_days', Number(e.target.value))} /></Field>
           <Field label="Jurisdictions" hint="Only the United States is available in this release."><input className={inputCls} value={f.jurisdictions.join(', ')} disabled /></Field>
         </>
       )}

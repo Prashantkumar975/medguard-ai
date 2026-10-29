@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, BookOpen, Bell, ChevronRight, CircleHelp, FileSearch, FileText, Globe, LayoutDashboard, ListChecks, Menu, Monitor, Moon, ScrollText, Search, Settings2, ShieldCheck, Sun, UserRound, X } from 'lucide-react'
+import { Activity, BookOpen, Bell, ChevronRight, CircleHelp, FileSearch, FileText, Globe, LayoutDashboard, ListChecks, LogOut, Menu, Monitor, Moon, ScrollText, Search, Settings2, ShieldCheck, Sun, UserRound, X } from 'lucide-react'
 import { api } from '../api/endpoints'
 import { USE_MOCK } from '../api/client'
 import { ROLES, useAuth } from '../auth/AuthContext'
@@ -37,7 +37,7 @@ export default function Layout() {
   const [open, setOpen] = useState(false)
   const [mockDismissed, setMockDismissed] = useState(() => localStorage.getItem('mg_mock_dismissed') === '1')
   const searchRef = useRef(null)
-  const { user, role, setRole, can } = useAuth()
+  const { user, role, setRole, can, logout } = useAuth()
   const { mode, setMode, dark } = useTheme()
   const { pathname } = useLocation()
   const nav = useNavigate()
@@ -64,6 +64,10 @@ export default function Layout() {
   const dismissMock = () => {
     localStorage.setItem('mg_mock_dismissed', '1')
     setMockDismissed(true)
+  }
+  const signOut = async () => {
+    await logout()
+    nav('/login', { replace: true })
   }
   const analytics = useQuery({ queryKey: ['analytics'], queryFn: api.analytics })
   const openCount = analytics.data?.kpis?.find((k) => k.key === 'open')?.value
@@ -133,6 +137,10 @@ export default function Layout() {
               options={[{ value: 'light', label: 'Light', icon: Sun }, { value: 'system', label: 'Match system', icon: Monitor }, { value: 'dark', label: 'Dark', icon: Moon }]}
             />
           </div>
+          <button type="button" onClick={signOut} className="mt-3 flex w-full items-center gap-2 rounded-lg border-t border-line px-1 pt-3 text-left text-sm text-muted transition-colors hover:text-ink">
+            <LogOut size={15} />
+            <span>Log out</span>
+          </button>
         </div>
       </aside>
 
@@ -186,9 +194,8 @@ export default function Layout() {
             <p className="max-w-prose leading-relaxed">
               <span className="font-medium text-ink">MedGuard AI</span> flags potential discrepancies for human review. It does not provide medical advice — a qualified clinician approves every correction.
             </p>
-            <nav aria-label="Official sources" className="flex items-center gap-4">
-              <a href="https://open.fda.gov/apis/drug/label/" target="_blank" rel="noreferrer" className="transition-colors hover:text-ink">openFDA labels</a>
-              <a href="https://www.fda.gov/drugs/drug-safety-and-availability/drug-safety-communications" target="_blank" rel="noreferrer" className="transition-colors hover:text-ink">FDA safety communications</a>
+            <nav aria-label="Project information" className="flex items-center gap-4">
+              <a href="/help" className="transition-colors hover:text-ink">Evidence and limitations</a>
               <span>v{__PKG_VERSION__}</span>
             </nav>
           </div>

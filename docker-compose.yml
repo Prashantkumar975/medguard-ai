@@ -1,24 +1,14 @@
-# MedGuard AI — full stack.
-#
-#   docker compose up -d
-#   docker compose exec api alembic upgrade head      # migrate
-#   docker compose exec api python -m scripts.bootstrap
-#   docker compose exec api python -m scripts.seed_references
-#
-# Ollama runs as a service and pulls the model on first use (see README).
-# Set OLLAMA_HOST / model overrides in .env for production inference (e.g. vLLM).
-
 services:
   db:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: medguard
-      POSTGRES_PASSWORD: medguard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: medguard
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"   # bound to localhost by default via docker; do not expose publicly
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U medguard -d medguard"]
       interval: 5s
@@ -27,40 +17,34 @@ services:
 
   redis:
     image: redis:7-alpine
-    # No host port published — internal to the compose network only.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama:/root/.ollama
-    ports:
-      - "127.0.0.1:11434:11434"   # loopback only; never expose publicly
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-
   api:
     build: ./backend
-    env_file: ./backend/.env
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://medguard:medguard@db:5433/medguard
+      DATABASE_URL: postgresql+psycopg://medguard:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/medguard
       REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@medguard.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Set SEED_ADMIN_PASSWORD in .env}
+      LLM_PROVIDER: ${LLM_PROVIDER:-nebius}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.tokenfactory.us-central1.nebius.com/v1/}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-nvidia/nemotron-3-super-120b-a12b}
       OLLAMA_BASE_URL: http://ollama:11434
-      # Compose-internal defaults; override SECRET_KEY in production.
       ALLOW_LOCAL_TARGETS: "false"
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
-      ollama: { condition: service_started }
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health"]
       interval: 10s
@@ -70,10 +54,17 @@ services:
   worker:
     build: ./backend
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
-    env_file: ./backend/.env
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://medguard:medguard@db:5433/medguard
+      DATABASE_URL: postgresql+psycopg://medguard:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/medguard
       REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      LLM_PROVIDER: ${LLM_PROVIDER:-nebius}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.tokenfactory.us-central1.nebius.com/v1/}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-nvidia/nemotron-3-super-120b-a12b}
       OLLAMA_BASE_URL: http://ollama:11434
     depends_on:
       db: { condition: service_healthy }
@@ -83,22 +74,25 @@ services:
   beat:
     build: ./backend
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
-    env_file: ./backend/.env
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://medguard:medguard@db:5433/medguard
+      DATABASE_URL: postgresql+psycopg://medguard:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/medguard
       REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
     depends_on:
-      - redis
-      - db
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
-  # Optional web UI. Build the frontend separately or point it at the API.
-  # frontend:
-  #   build: ./frontend
-  #   environment:
-  #     VITE_USE_MOCK: "false"
-  #     VITE_API_URL: http://api:8000
-  #   ports: ["5173:5173"]
-  #   depends_on: [api]
+  # Optional local inference: use --profile local-llm and set LLM_PROVIDER=ollama.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [local-llm]
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
 
 volumes:
   pgdata:

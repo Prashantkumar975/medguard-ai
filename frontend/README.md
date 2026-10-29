@@ -1,25 +1,20 @@
-# MedGuard AI frontend
+# MedGuard AI Frontend
 
-React 18 + Vite + Tailwind 4 (plain JSX). Routing: React Router. Data: TanStack Query.
+React 18, Vite, Tailwind CSS, React Router, and TanStack Query.
 
-## Run
-    npm install
-    npm run dev        # http://localhost:5173
+## Run with real account authentication
 
-## Connect to the real backend (for the backend teammate)
-1. In `.env` set `VITE_USE_MOCK=false` and `VITE_API_URL=http://localhost:8000`.
-2. All calls go through `src/api/endpoints.js` and `src/api/client.js`. Requests are sent to `{VITE_API_URL}/api/v1/...` with `Authorization: Bearer <localStorage.mg_token>`.
-3. `src/api/mock.js` is the contract: the JSON shapes it returns are what each page expects.
-4. Replace `src/auth/AuthContext.jsx` with the real session (roles: admin, reviewer, viewer). The "Preview as role" switcher only shows in mock mode.
+1. Start the backend API at `http://localhost:8000` and initialize its database and administrator account. See [`../backend/README.md`](../backend/README.md).
+2. Copy `.env.example` to `.env` and set `VITE_API_URL` if the backend is hosted elsewhere. Keep `VITE_USE_MOCK=false` for real account authentication.
+3. Install dependencies and start the frontend:
 
-## Endpoints used
-In the plan: GET/POST /sites, POST /scans, GET /scans/{id}, GET /claims, GET /incidents, GET /incidents/{id},
-POST /incidents/{id}/review (body: decision = confirm | dismiss | needs_info, rationale), POST /incidents/{id}/recheck, GET /analytics/summary.
+   ```powershell
+   npm install
+   npm run dev
+   ```
 
-Not in the plan, needed by the UI (proposed):
-- GET /scans?site_id=    crawl history
-- PATCH /sites/{id}      enable or disable a site
-- GET /references?q=     Medical library
-- GET /admin/users, PATCH /admin/users/{id}, GET/PUT /admin/settings
+Open `http://localhost:5173/login`. Sign-in uses the backend `/api/v1/auth/login` endpoint. Select **Create an account** to register a workspace and its first administrator through `/api/v1/auth/register`. Registration currently does not verify email ownership. If an email is used in more than one organization, enter the organization ID shown on the Account page. The frontend validates the session through `/auth/me`, refreshes expired access tokens, and revokes the refresh token on logout.
 
-Query params for GET /incidents: q, priority, verdict, status (active | all | a single status).
+## Demo mode
+
+Set `VITE_USE_MOCK=true` to use the fictional in-memory sample data. Any non-empty email and password will open the demo workspace; this is not real authentication and must not be used for protected data.

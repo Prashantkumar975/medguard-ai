@@ -1,6 +1,7 @@
 import { lazy } from 'react'
 import { Link, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
+import RequireAuth from './components/RequireAuth'
 import RequirePerm from './components/RequirePerm'
 import { Empty } from './components/ui'
 
@@ -18,11 +19,15 @@ const AuditLog = lazy(() => import('./pages/AuditLog'))
 const Help = lazy(() => import('./pages/Help'))
 const Account = lazy(() => import('./pages/Account'))
 const Admin = lazy(() => import('./pages/Admin'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
 
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="login" element={<Login />} />
+      <Route path="register" element={<Register />} />
+      <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Dashboard />} />
         <Route path="sites" element={<Sites />} />
         <Route path="sites/:id" element={<SiteDetail />} />
