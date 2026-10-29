@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -15,7 +16,7 @@ from app.core.config import settings
 from app.models import Page, Scan, Site, Snapshot
 from app.services.crawler import robots
 from app.services.crawler.extract import content_hash, extract_text, needs_js_render, render_js  # noqa: F401
-from app.services.crawler.security import SSRFError, fetch_url, validate_url
+from app.services.crawler.security import SSRFError, build_client, fetch_url, validate_url
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ class PageResult:
     text: str
     content_hash: str
     changed: bool
+    snapshot_id: str | None = None
+    extraction_pending: bool = False
     last_modified: datetime | None = None
     error: str | None = None
 
@@ -47,6 +50,18 @@ def site_base_url(domain: str) -> str:
     if settings.allow_local_targets and host in ("localhost", "127.0.0.1", "0.0.0.0"):
         return f"http://{domain}/"
     return f"https://{domain}/"
+
+
+def parse_last_modified(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def discover_urls(client: httpx.Client, site: Site, max_pages: int) -> list[str]:
@@ -121,11 +136,7 @@ def crawl_site(db: Session, scan: Scan, site: Site, *, max_pages: int | None = N
     """Crawl a site under budget, storing versioned snapshots with change detection."""
     budget = max_pages or scan.max_pages or settings.crawl_max_pages_per_scan
     result = CrawlResult()
-    with httpx.Client(
-        timeout=settings.fetch_timeout_s,
-        follow_redirects=False,
-        headers={"User-Agent": settings.crawl_user_agent},
-    ) as client:
+    with build_client(timeout=settings.fetch_timeout_s) as client:
         try:
             urls = only_urls or discover_urls(client, site, budget)
         except Exception as exc:
@@ -180,11 +191,23 @@ def crawl_site(db: Session, scan: Scan, site: Site, *, max_pages: int | None = N
                     html = rendered
                     text = extract_text(html)
 
-            page = db.scalar(select(Page).where(Page.site_id == site.id, Page.url == url))
+            page = db.scalar(
+                select(Page).where(Page.site_id == site.id, Page.url == url).with_for_update()
+            )
             if page is None:
-                page = Page(site_id=site.id, url=url)
-                db.add(page)
-                db.flush()
+                from sqlalchemy.exc import IntegrityError
+
+                try:
+                    with db.begin_nested():
+                        page = Page(site_id=site.id, url=url)
+                        db.add(page)
+                        db.flush()
+                except IntegrityError:
+                    page = db.scalar(
+                        select(Page).where(Page.site_id == site.id, Page.url == url).with_for_update()
+                    )
+                if page is None:
+                    raise RuntimeError(f"Page row could not be created or loaded for {url}")
 
             h = content_hash(text)
             previous = db.scalar(
@@ -198,14 +221,12 @@ def crawl_site(db: Session, scan: Scan, site: Site, *, max_pages: int | None = N
                 url=url,
                 http_status=status,
                 content_hash=h,
-                text_content=text,
+                # Avoid storing the same full page text on every unchanged scan.
+                text_content=text if changed else "",
                 version=(previous.version + 1) if previous else 1,
                 changed=changed,
-                last_modified=(
-                    datetime.fromtimestamp(float(last_mod_header), tz=timezone.utc)
-                    if last_mod_header and last_mod_header.isdigit()
-                    else None
-                ),
+                last_modified=parse_last_modified(last_mod_header),
+                extraction_status=("pending" if changed or previous.extraction_status != "completed" else "completed"),
             )
             db.add(snapshot)
             db.flush()
@@ -213,6 +234,8 @@ def crawl_site(db: Session, scan: Scan, site: Site, *, max_pages: int | None = N
             page.last_seen_at = datetime.now(timezone.utc)
             result.pages.append(
                 PageResult(url=url, http_status=status, text=text, content_hash=h, changed=changed,
+                           snapshot_id=snapshot.id,
+                           extraction_pending=snapshot.extraction_status != "completed",
                            last_modified=snapshot.last_modified)
             )
             scan.pages_done += 1

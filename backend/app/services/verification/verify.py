@@ -22,7 +22,7 @@ VERDICT_INCOMPLETE = "INCOMPLETE_INFORMATION"
 VERDICT_INSUFFICIENT = "INSUFFICIENT_EVIDENCE"
 
 VETERINARY_TERMS = re.compile(
-    r"\b(vet|veterinary|dog|dogs|canine|cat|cats|feline|horse|equine|livestock|animal|animals|pet|pets)\b",
+    r"\b(vet|veterinary|dog|dogs|canine|cat|cats|feline|horse|horses|equine|livestock|bovine|porcine|ovine)\b",
     re.I,
 )
 
@@ -260,12 +260,21 @@ def verify(
     # small models frequently miss numeric threshold conflicts.
     num_conflicts = _numeric_conflicts(claim.claim_text, evidence_texts)
     med_match = next((c for c in checks if c.name == "medication_identity"), None)
+    context_checks = [
+        c for c in checks
+        if c.name in {"medication_identity", "formulation", "population", "dosage", "species_alignment", "jurisdiction"}
+    ]
+    mismatches = [c.name.replace("_", " ") for c in context_checks if not c.matched]
+    context_note = (
+        "Automated context checks flagged possible mismatch in: " + ", ".join(mismatches) + ". "
+        if mismatches
+        else "No mismatch was flagged by the available structured context checks. "
+    )
     if relation == "contradicts":
         outcome.verdict = VERDICT_CONTRADICTION
         outcome.rationale = (
-            f"The source material conflicts with the page claim. {reason} "
-            "Structured checks confirm the medication/population context aligns; expert review is required "
-            "before treating this as a confirmed error."
+            f"The source material appears to conflict with the page claim. {reason} "
+            f"{context_note}Expert review is required before treating this as a confirmed error."
         )
     elif relation == "supports" and num_conflicts and (med_match is None or med_match.matched):
         outcome.verdict = VERDICT_CONTRADICTION

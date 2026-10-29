@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_perm
 from app.core.database import get_db
-from app.models import AuditLog, Site, User, new_id
+from app.models import AuditLog, OrgSetting, Site, User, new_id
 from app.schemas import SiteCreate, SiteOut, SitePatch
 
 router = APIRouter()
@@ -48,13 +48,16 @@ def create_site(
     )
     if existing is not None:
         raise HTTPException(status_code=409, detail="That domain is already registered")
+    org_settings = db.get(OrgSetting, user.organization_id)
+    profile = (org_settings.organization_profile if org_settings else {}) or {}
+    default_interval = int(profile.get("default_scan_interval_hours", 24))
     site = Site(
         id=new_id(),
         organization_id=user.organization_id,
         domain=domain,
         jurisdiction=body.jurisdiction or "US",
         language=body.language or "en",
-        scan_interval_hours=body.scan_interval_hours or 24,
+        scan_interval_hours=body.scan_interval_hours if body.scan_interval_hours is not None else default_interval,
         enabled=True,
         pages=0,
     )

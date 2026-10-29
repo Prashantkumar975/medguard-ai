@@ -1,4 +1,6 @@
 """Scans: POST /scans enqueues a real background job; GETs expose progress."""
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,11 +20,16 @@ def start_scan(
     db: Session = Depends(get_db),
     user: User = Depends(require_perm("scan")),
 ):
-    site = db.scalar(select(Site).where(Site.id == body.site_id, Site.organization_id == user.organization_id))
+    site = db.scalar(select(Site).where(Site.id == body.site_id, Site.organization_id == user.organization_id).with_for_update())
     if site is None:
         raise HTTPException(status_code=404, detail="Unknown site")
     if not site.enabled:
         raise HTTPException(status_code=409, detail="Enable this site before scanning")
+    active = db.scalar(
+        select(Scan.id).where(Scan.site_id == site.id, Scan.status.in_(("queued", "running"))).limit(1)
+    )
+    if active:
+        raise HTTPException(status_code=409, detail="A scan is already queued or running for this site")
 
     scan = Scan(
         id=new_id(),
@@ -39,8 +46,15 @@ def start_scan(
 
     from app.workers.tasks import run_scan_task
 
-    async_result = run_scan_task.delay(scan.id)
-    scan.task_id = async_result.id
+    try:
+        async_result = run_scan_task.delay(scan.id)
+        scan.task_id = async_result.id
+    except Exception as exc:
+        scan.status = "failed"
+        scan.finished_at = datetime.now(timezone.utc)
+        scan.error = f"Could not queue scan: {exc.__class__.__name__}"
+        db.commit()
+        raise HTTPException(status_code=503, detail="Could not queue the scan. Please try again shortly.") from exc
     db.commit()
     db.refresh(scan)
     return ScanOut.model_validate(scan, from_attributes=True)

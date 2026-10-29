@@ -13,7 +13,7 @@ from app.services.crawler.security import SSRFError, validate_url
 
 log = logging.getLogger(__name__)
 
-_cache: dict[str, RobotFileParser] = {}
+_cache: dict[str, tuple[RobotFileParser, float]] = {}
 _last_fetch: dict[str, float] = {}
 
 
@@ -26,8 +26,9 @@ def get_robots(client: httpx.Client, url: str) -> RobotFileParser:
     """Fetch and cache robots.txt for a site. A missing robots.txt allows all."""
     p = urlparse(url)
     key = p.netloc
-    if key in _cache:
-        return _cache[key]
+    cached = _cache.get(key)
+    if cached and cached[1] > time.monotonic():
+        return cached[0]
     parser = RobotFileParser()
     parser.set_url(_robots_url(url))
     try:
@@ -40,7 +41,7 @@ def get_robots(client: httpx.Client, url: str) -> RobotFileParser:
     except (SSRFError, httpx.HTTPError) as exc:
         log.warning("robots.txt fetch failed for %s: %s", key, exc)
         parser.allow_all = True
-    _cache[key] = parser
+    _cache[key] = (parser, time.monotonic() + max(60, settings.robots_cache_ttl_s))
     return parser
 
 

@@ -10,9 +10,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -22,6 +23,7 @@ from app.services.retrieval.embeddings import embed_query
 log = logging.getLogger(__name__)
 
 RRF_K = 60
+_STOP_WORDS = {"the", "and", "for", "with", "that", "this", "from", "are", "can", "may", "not", "use", "used", "into", "than", "when", "which", "while", "will", "does", "what", "have", "has", "been", "was", "were"}
 
 
 @dataclass
@@ -61,6 +63,13 @@ def hybrid_search(
     top_k = top_k or settings.retrieval_top_k
     pool_k = pool_k or settings.retrieval_pool_k
 
+    query_terms = list(dict.fromkeys(
+        token.lower() for token in re.findall(r"[A-Za-z0-9]+", query)
+        if len(token) > 2 and token.lower() not in _STOP_WORDS
+    ))
+    if not query_terms:
+        return []
+
     # --- vector search ---
     vec_hits: list[tuple[str, float]] = []
     try:
@@ -82,26 +91,35 @@ def hybrid_search(
         for chunk, _doc in rows:
             e = np.array(chunk.embedding, dtype=float)
             e /= np.linalg.norm(e) or 1.0
-            vec_hits.append((chunk.id, float(qarr @ e)))
+            similarity = float(qarr @ e)
+            if similarity >= settings.retrieval_min_similarity:
+                vec_hits.append((chunk.id, similarity))
     except Exception as exc:
         log.warning("vector search unavailable: %s", exc)
 
     # --- keyword search ---
     kw_hits: list[tuple[str, float]] = []
-    term = f"%{query.strip().lower()[:120]}%"
+    predicates = [ReferenceChunk.text.ilike(f"%{term}%") for term in query_terms]
+    predicates.extend(ReferenceDocument.title.ilike(f"%{term}%") for term in query_terms)
     kw_rows = (
         db.execute(
             _base_query(org_id, jurisdiction)
-            .where(
-                ReferenceChunk.text.ilike(term)
-                | ReferenceDocument.title.ilike(term)
-            )
-            .limit(pool_k)
+            .where(or_(*predicates))
+            .limit(pool_k * 3)
         )
         .all()
     )
-    for i, (chunk, _doc) in enumerate(kw_rows):
-        kw_hits.append((chunk.id, 1.0 - i * 0.03))
+    keyword_counts: dict[str, int] = {}
+    for chunk, doc in kw_rows:
+        haystack = f"{chunk.text} {doc.title}".lower()
+        matches = sum(1 for term in query_terms if term in haystack)
+        minimum = 1 if len(query_terms) == 1 else 2
+        if matches >= minimum and matches / len(query_terms) >= 0.15:
+            keyword_counts[chunk.id] = matches
+    for rank, (chunk_id, _count) in enumerate(
+        sorted(keyword_counts.items(), key=lambda item: (-item[1], item[0]))[:pool_k]
+    ):
+        kw_hits.append((chunk_id, float(_count)))
 
     # --- reciprocal rank fusion ---
     scores: dict[str, float] = {}
@@ -110,8 +128,9 @@ def hybrid_search(
         scores[cid] = scores.get(cid, 0.0) + 1.0 / (RRF_K + rank + 1)
         method[cid] = "vector"
     for rank, (cid, _s) in enumerate(sorted(kw_hits, key=lambda t: -t[1])):
+        already_present = cid in scores
         scores[cid] = scores.get(cid, 0.0) + 1.0 / (RRF_K + rank + 1)
-        method[cid] = "hybrid" if cid in scores else "keyword"
+        method[cid] = "hybrid" if already_present else "keyword"
 
     if not scores:
         return []

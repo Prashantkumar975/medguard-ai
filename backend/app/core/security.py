@@ -10,6 +10,8 @@ ALGORITHM = "HS256"
 
 
 def hash_password(password: str) -> str:
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 UTF-8 bytes for bcrypt")
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 

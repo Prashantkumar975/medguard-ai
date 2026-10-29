@@ -51,7 +51,7 @@ class Organization(Base, TimestampMixin):
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
-    __table_args__ = (UniqueConstraint("email", name="uq_users_email"),)
+    __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_users_org_email"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     organization_id: Mapped[str] = mapped_column(
@@ -116,7 +116,10 @@ class Snapshot(Base):
     """Versioned page snapshot: content, extracted text, hash, fetch metadata."""
 
     __tablename__ = "snapshots"
-    __table_args__ = (Index("ix_snapshots_page_hash", "page_id", "content_hash"),)
+    __table_args__ = (
+        Index("ix_snapshots_page_hash", "page_id", "content_hash"),
+        Index("uq_snapshots_page_version", "page_id", "version", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     page_id: Mapped[str] = mapped_column(ForeignKey("pages.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -131,6 +134,8 @@ class Snapshot(Base):
     html_path: Mapped[str | None] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     changed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    extraction_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    extraction_error: Mapped[str | None] = mapped_column(Text)
 
 
 class Scan(Base):
@@ -165,7 +170,7 @@ class Claim(Base):
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    snapshot_id: Mapped[str] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
     site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True)
     statement: Mapped[str] = mapped_column(Text, nullable=False)
     context_label: Mapped[str | None] = mapped_column(Text)
@@ -210,7 +215,9 @@ class ReferenceDocument(Base):
     )
 
 
-EMB_DIM = settings.embedding_dim
+# This dimension matches the initial pgvector schema migration. Changing it
+# requires a new migration and rebuilding every stored embedding.
+EMB_DIM = 384
 
 
 class ReferenceChunk(Base):
@@ -288,7 +295,7 @@ class Evidence(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
     chunk_id: Mapped[str] = mapped_column(
-        ForeignKey("reference_chunks.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("reference_chunks.id", ondelete="SET NULL"), nullable=True, index=True
     )
     document_id: Mapped[str] = mapped_column(
         ForeignKey("reference_documents.id", ondelete="CASCADE"), nullable=False, index=True

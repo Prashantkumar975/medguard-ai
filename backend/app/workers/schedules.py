@@ -12,4 +12,8 @@ celery_app.conf.beat_schedule = {
         "task": "medguard.reap_stuck",
         "schedule": 600.0,
     },
+    "snapshot-retention-daily": {
+        "task": "medguard.snapshot_retention",
+        "schedule": 86400.0,
+    },
 }

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 Verdict = Literal[
     "SUPPORTED",
@@ -26,6 +26,29 @@ EMAIL_PATTERN = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
 class LoginRequest(BaseModel):
     email: str = Field(pattern=EMAIL_PATTERN)
     password: str
+    organization_id: str | None = None
+
+
+class RegisterRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    email: str = Field(pattern=EMAIL_PATTERN, max_length=320)
+    organization_name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=12, max_length=200)
+
+    @field_validator("name", "organization_name")
+    @classmethod
+    def trim_non_empty_names(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, password: str) -> str:
+        if len(password.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return password
 
 
 class TokenPair(BaseModel):
@@ -225,19 +248,29 @@ class UserPatch(BaseModel):
     role: Role
 
 
+class UserCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    email: str = Field(pattern=EMAIL_PATTERN, max_length=320)
+    password: str = Field(min_length=12, max_length=200)
+    role: Role = "viewer"
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, password: str) -> str:
+        if len(password.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return password
+
+
 class NotificationSettings(BaseModel):
-    email_enabled: bool = True
-    recipients: str = ""
-    webhook_url: str = ""
     min_priority: Priority = "high"
-    daily_digest: bool = True
 
 
 class OrganizationProfile(BaseModel):
     name: str = ""
-    default_scan_interval_hours: int = 24
+    default_scan_interval_hours: int = Field(default=24, ge=1, le=168)
     jurisdictions: list[str] = ["US"]
-    retention_days: int = 365
+    retention_days: int = Field(default=365, ge=30, le=3650)
 
 
 class SettingsOut(BaseModel):

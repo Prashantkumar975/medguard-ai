@@ -194,6 +194,16 @@ def review_incident(
             status_code=422,
             detail="Choose a decision and write a rationale of at least 10 characters",
         )
+    inc = db.scalar(
+        select(Incident)
+        .where(Incident.id == inc.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if inc is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    if inc.status not in ("open", "in_review"):
+        raise HTTPException(status_code=409, detail=f"A finding in {inc.status} status cannot be reviewed")
     previous = inc.status
     inc.status = DECISION_TRANSITIONS[body.decision]
     review = Review(
