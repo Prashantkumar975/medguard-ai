@@ -147,7 +147,7 @@ export function VerdictChart({ data }) {
       {!data ? <div className="px-5 pb-5"><Skeleton className="h-52" /></div> : (
         <div className="px-5 pb-5">
           <div className="flex items-center justify-between gap-3 rounded-xl bg-mint px-3.5 py-2.5">
-            <p className="text-sm text-ink"><span className="font-display text-lg font-bold">{pctSupported}%</span> <span className="text-ink/75">supported by official sources</span></p>
+            <p className="text-sm text-ink"><span className="font-display text-lg font-bold">{pctSupported}%</span> <span className="text-ink/75">supported by library sources</span></p>
             <p className="text-xs text-ink/65">{flaggedTotal} flagged</p>
           </div>
           <div className="mt-3 flex justify-end">

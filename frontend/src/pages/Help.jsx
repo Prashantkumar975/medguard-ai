@@ -8,7 +8,7 @@ import { PRIORITIES, STATUSES, VERDICTS } from '../lib/constants'
 const PIPELINE = [
   ['Discovery', 'The crawler checks each monitored page on its schedule and stores a snapshot when the content changes. It respects robots.txt and rate limits.'],
   ['Extraction', 'Medical claims are extracted from the page text together with their surrounding context.'],
-  ['Guideline Intelligence', 'Each claim is matched to an authoritative reference — an FDA Drug Safety Communication or an openFDA drug label.'],
+  ['Reference matching', 'Each claim is compared with the relevant documents available in the organization’s medical library.'],
   ['Verification', 'Hybrid retrieval and context filters confirm the right passage of the reference applies to the claim.'],
   ['Contradiction', 'Rule checks and natural-language inference compare the claim with the evidence and choose a verdict.'],
   ['Risk Assessment', 'A priority is computed from potential harm, patient exposure, evidence strength and uncertainty.'],
@@ -39,7 +39,7 @@ const FAQ = [
   ['Does MedGuard give medical advice or correct pages itself?',
     <>No. MedGuard flags potential discrepancies for human review and never edits a monitored site. A qualified clinician approves every correction, and the disclaimer appears in the footer of every page.</>],
   ['Where does the evidence come from?',
-    <>Official FDA sources only: <a href="https://www.fda.gov/drugs/drug-safety-and-availability/drug-safety-communications" target="_blank" rel="noreferrer" className="text-brand underline">Drug Safety Communications</a> and <a href="https://open.fda.gov/apis/drug/label/" target="_blank" rel="noreferrer" className="text-brand underline">openFDA drug labels</a>. The Medical library lists every reference document with its version and effective date.</>],
+    <>MedGuard compares claims with the documents currently ingested in its Medical library. The bundled demo documents are fictional test fixtures, not FDA sources. Use only verified, authorized references for real evaluations, and check each document's source, version, and effective date.</>],
   ['Which websites can be monitored?',
     <>Only approved public healthcare sites, currently in the United States jurisdiction. The crawler follows robots.txt and applies rate limits, and an administrator can pause monitoring for any site at any time.</>],
   [USE_MOCK ? 'What does the “Mock data” badge mean?' : 'How do I connect the live API?',
@@ -60,9 +60,9 @@ export default function Help() {
         <CardHead title="About MedGuard AI" hint="Clinical misinformation monitoring" />
         <div className="space-y-3 px-5 pb-5 text-sm leading-relaxed">
           <p>
-            MedGuard AI continuously monitors approved healthcare websites for medical claims that conflict with current FDA
-            guidance. It extracts claims from changed pages, matches them against official references, and raises a finding
-            whenever the two disagree — so clinical reviewers can act on potential misinformation within hours, not weeks.
+            MedGuard AI monitors approved healthcare websites and compares extracted medical claims with the references
+            available in the organization’s library. It raises potential discrepancies for review. The quality of a finding
+            depends on the accuracy, currency, and authority of the documents loaded into that library.
           </p>
           <p>
             <strong>MedGuard flags discrepancies for human review. It does not provide medical advice</strong> — a qualified
@@ -70,8 +70,8 @@ export default function Help() {
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <Pill tone="green">Human-in-the-loop</Pill>
-            <Pill tone="blue">FDA sources only</Pill>
-            <Pill tone="slate">United States jurisdiction</Pill>
+            <Pill tone="blue">Evidence linked to library sources</Pill>
+            <Pill tone="slate">Configured jurisdiction</Pill>
             {USE_MOCK && <Pill tone="amber">Sample data</Pill>}
           </div>
         </div>

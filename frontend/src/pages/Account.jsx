@@ -11,7 +11,7 @@ import { fmtDateTime, timeAgo } from '../lib/format'
 const SHORTCUTS = [['/', 'Focus the header search'], ['Esc', 'Leave the search field'], ['Enter', 'Open the focused queue row']]
 
 export default function Account() {
-  const { role, setRole, user } = useAuth()
+  const { role, setRole, user, logout } = useAuth()
   const { mode, setMode, dark } = useTheme()
   const toast = useToast()
   const nav = useNavigate()
@@ -35,14 +35,14 @@ export default function Account() {
               <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-brand text-lg font-bold text-on-brand">{initials}</span>
               <div className="min-w-0">
                 <p className="font-display text-lg font-bold">{user.name}</p>
-                <p className="text-sm text-muted">{me?.email ?? '—'}</p>
+                <p className="text-sm text-muted">{user.email ?? me?.email ?? '—'}</p>
               </div>
               <Pill tone="violet" className="ml-auto">{user.roleLabel}</Pill>
             </div>
             <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-line pt-4 text-sm">
               <div>
                 <dt className="text-xs text-muted">Email</dt>
-                <dd className="mt-0.5">{me?.email ?? 'Not available'}</dd>
+                <dd className="mt-0.5">{user.email ?? me?.email ?? 'Not available'}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted">Last active</dt>
@@ -52,6 +52,10 @@ export default function Account() {
                 <dt className="text-xs text-muted">Workspace role</dt>
                 <dd className="mt-0.5">{user.roleLabel}</dd>
               </div>
+              {user.organizationId && <div className="col-span-2">
+                <dt className="text-xs text-muted">Organization ID</dt>
+                <dd className="mt-0.5 break-all font-mono text-xs">{user.organizationId}</dd>
+              </div>}
               <div>
                 <dt className="text-xs text-muted">Jurisdiction</dt>
                 <dd className="mt-0.5">United States</dd>
@@ -98,7 +102,7 @@ export default function Account() {
                     <p className="text-sm font-medium">Signed in as {user.name}</p>
                     <p className="text-xs text-muted">Role changes are made by an administrator.</p>
                   </div>
-                  <Button variant="outline" onClick={() => { localStorage.removeItem('mg_token'); toast('Signed out'); nav('/') }}><LogOut size={15} />Sign out</Button>
+                  <Button variant="outline" onClick={async () => { await logout(); toast('Signed out'); nav('/login', { replace: true }) }}><LogOut size={15} />Sign out</Button>
                 </div>
               )}
             </div>

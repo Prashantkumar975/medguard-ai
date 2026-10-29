@@ -82,7 +82,7 @@ export default function Notifications() {
 
       <p className="mt-4 flex items-center gap-2 text-xs text-muted">
         <Bell size={13} aria-hidden="true" />
-        Email and webhook alerts are configured in Administration → Notifications.
+        Finding notifications shown here follow the priority threshold in Administration.
       </p>
     </>
   )
